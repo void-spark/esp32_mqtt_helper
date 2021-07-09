@@ -28,6 +28,7 @@ static TimerHandle_t statsTimer;
 
 static topic_subscriber_t topicSubscriber;
 static message_handler_t messageHandler;
+static any_message_handler_t anyMessageHandler;
 
 void publishDevProp(const char *deviceProperty, const char *value) {
 	char topic[50];
@@ -44,6 +45,10 @@ void publishNodeProp(const char *nodeId, const char *property, const char *value
 void subscribeDevTopic(const char *subTopic) {
 	char topic[50];
 	snprintf(topic, sizeof(topic), "%s/%s", deviceTopic, subTopic);
+    int msg_id = esp_mqtt_client_subscribe(mqttClient, topic, 2);
+}
+
+void subscribeTopic(const char *topic) {
     int msg_id = esp_mqtt_client_subscribe(mqttClient, topic, 2);
 }
 
@@ -197,8 +202,9 @@ static esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event) {
                     break;
                 }
                 snprintf(data, sizeof(data), "%.*s", event->data_len, event->data);
-
-                handleMessage(topic, data);
+                if(anyMessageHandler == NULL || !anyMessageHandler(topic,data)) {
+                    handleMessage(topic, data);
+                }
             }
             break;
         case MQTT_EVENT_ERROR:
@@ -211,9 +217,10 @@ static esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event) {
     return ESP_OK;
 }
 
-void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageHandlerArg) {
+void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageHandlerArg, any_message_handler_t anyMessageHandlerArg) {
     topicSubscriber = topicSubscriberArg;
     messageHandler = messageHandlerArg;
+    anyMessageHandler = anyMessageHandlerArg;
 
     mqttEventGroup = xEventGroupCreate();
 
