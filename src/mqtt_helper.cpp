@@ -1,7 +1,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_mac.h"
+#include "esp_timer.h"
 #include "esp_ota_ops.h"
 #include "mqtt_client.h"
 #include "mqtt_helper.h"
@@ -86,9 +89,12 @@ static void handleConnected() {
 
     publishDevProp("name", "TODO:IrRc");
 
-    tcpip_adapter_ip_info_t ipInfo = {}; 
-    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
-    publishDevProp("localip", ip4addr_ntoa(&ipInfo.ip));
+    esp_netif_ip_info_t ipInfo = {}; 
+    esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");    
+    esp_netif_get_ip_info(netif, &ipInfo);
+	char ipValue[16];
+    snprintf(ipValue, sizeof(ipValue), IPSTR, IP2STR(&ipInfo.ip));
+    publishDevProp("localip", ipValue);
 
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
