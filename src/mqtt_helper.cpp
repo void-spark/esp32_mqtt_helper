@@ -36,23 +36,23 @@ static any_message_handler_t anyMessageHandler;
 void publishDevProp(const char *deviceProperty, const char *value) {
 	char topic[50];
 	snprintf(topic, sizeof(topic), "%s/$%s", deviceTopic, deviceProperty);
-    int msg_id = esp_mqtt_client_publish(mqttClient, topic, value, 0, 1, 1);
+    esp_mqtt_client_publish(mqttClient, topic, value, 0, 1, 1);
 }
 
 void publishNodeProp(const char *nodeId, const char *property, const char *value) {
 	char topic[60];
 	snprintf(topic, sizeof(topic), "%s/%s/%s", deviceTopic, nodeId, property);
-    int msg_id = esp_mqtt_client_publish(mqttClient, topic, value, 0, 1, 1);
+    esp_mqtt_client_publish(mqttClient, topic, value, 0, 1, 1);
 }
 
 void subscribeDevTopic(const char *subTopic) {
 	char topic[50];
 	snprintf(topic, sizeof(topic), "%s/%s", deviceTopic, subTopic);
-    int msg_id = esp_mqtt_client_subscribe(mqttClient, topic, 2);
+    esp_mqtt_client_subscribe(mqttClient, topic, 2);
 }
 
 void subscribeTopic(const char *topic) {
-    int msg_id = esp_mqtt_client_subscribe(mqttClient, topic, 2);
+    esp_mqtt_client_subscribe(mqttClient, topic, 2);
 }
 
 static void publishStats() {
@@ -61,11 +61,11 @@ static void publishStats() {
     publishDevProp("stats/uptime", uptime);
 
 	char heap[16];
-    snprintf(heap, sizeof(heap), "%u", esp_get_free_heap_size());
+    snprintf(heap, sizeof(heap), "%lu", esp_get_free_heap_size());
     publishDevProp("stats/freeheap", heap);
 
 	char reconnects[10];
-    snprintf(reconnects, sizeof(reconnects), "%d", reconnectCount);
+    snprintf(reconnects, sizeof(reconnects), "%lu", reconnectCount);
     publishDevProp("stats/reconnects", reconnects);
 
 	char signal[16];
@@ -102,7 +102,7 @@ static void handleConnected() {
     snprintf(macValue, sizeof(macValue), "%02X:%02X:%02X:%02X:%02X:%02X",  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     publishDevProp("mac", macValue);
 
-    const esp_app_desc_t * appDesc = esp_ota_get_app_description();
+    const esp_app_desc_t * appDesc = esp_app_get_description();
     publishDevProp("fw/name", appDesc->project_name);
     publishDevProp("fw/version", appDesc->version);
 
@@ -165,7 +165,10 @@ static void handleMessage(char* topic, const char* data) {
     messageHandler(propLevel1, propLevel2, propLevel3, data);
 }
 
-static esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event) {
+
+static void mqttEventHandler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+    // esp_mqtt_client_handle_t client = event->client;
     switch (event->event_id) {
         case MQTT_EVENT_BEFORE_CONNECT:
             ESP_LOGD(TAG, "MQTT_EVENT_BEFORE_CONNECT");
@@ -220,7 +223,6 @@ static esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event) {
             ESP_LOGI(TAG, "Other event id:%d", event->event_id);
             break;
     }
-    return ESP_OK;
 }
 
 void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageHandlerArg, any_message_handler_t anyMessageHandlerArg) {
@@ -244,14 +246,14 @@ void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageH
 
     // esp_mqtt_client_init will make copies of all the provided config data
     esp_mqtt_client_config_t mqtt_cfg = {};
-    mqtt_cfg.uri = mqtt_server;
-    mqtt_cfg.event_handle = mqttEventHandler;
-    mqtt_cfg.lwt_topic = lwt_topic;
-    mqtt_cfg.lwt_msg = "lost";
-    mqtt_cfg.lwt_qos = 1;
-    mqtt_cfg.lwt_retain = 1;
+    mqtt_cfg.broker.address.uri = mqtt_server;
+    mqtt_cfg.session.last_will.topic = lwt_topic;
+    mqtt_cfg.session.last_will.msg = "lost";
+    mqtt_cfg.session.last_will.qos = 1;
+    mqtt_cfg.session.last_will.retain = 1;
 
     mqttClient = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_register_event(mqttClient, MQTT_EVENT_ANY, mqttEventHandler, NULL);
     esp_mqtt_client_start(mqttClient);
 }
 
@@ -260,5 +262,5 @@ void mqttWait() {
 }
 
 void mqttPublish(const char *topic, const char *data, int len, int qos, int retain) {
-    int msg_id = esp_mqtt_client_publish(mqttClient, topic, data, len, qos, retain);
+    esp_mqtt_client_publish(mqttClient, topic, data, len, qos, retain);
 }
