@@ -23,6 +23,8 @@ static EventGroupHandle_t mqttEventGroup;
 
 static char deviceTopic[30] = {};
 
+static char deviceName[32] = {};
+
 // I expect event loop events to come from one task, so no need for volatile/semaphores
 static uint32_t reconnectCount = -1;
 
@@ -92,7 +94,7 @@ static void handleConnected() {
 
     publishDevProp("state", "init");
 
-    publishDevProp("name", "TODO:IrRc");
+    publishDevProp("name", deviceName);
 
     esp_netif_ip_info_t ipInfo = {}; 
     esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");    
@@ -230,7 +232,24 @@ static void mqttEventHandler(void *handler_args, esp_event_base_t base, int32_t 
     }
 }
 
-void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageHandlerArg, any_message_handler_t anyMessageHandlerArg) {
+esp_err_t mqttStart(char* name, topic_subscriber_t topicSubscriberArg, message_handler_t messageHandlerArg, any_message_handler_t anyMessageHandlerArg) {
+    size_t maxNameLen = sizeof(deviceName) - 1;
+    if(strlen(name) > maxNameLen) {
+        ESP_LOGE(TAG, "Name length %d exceeds maximum %d", strlen(name), maxNameLen);
+        return ESP_FAIL;
+    }
+    strcpy(deviceName, name);
+
+    if(topicSubscriberArg == NULL) {
+        ESP_LOGE(TAG, "Topic subscriber must be set");
+        return ESP_FAIL;
+    }
+
+    if(messageHandlerArg == NULL) {
+        ESP_LOGE(TAG, "Message handler must be set");
+        return ESP_FAIL;
+    }
+
     topicSubscriber = topicSubscriberArg;
     messageHandler = messageHandlerArg;
     anyMessageHandler = anyMessageHandlerArg;
@@ -261,6 +280,8 @@ void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageH
     mqttClient = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(mqttClient, MQTT_EVENT_ANY, mqttEventHandler, NULL);
     esp_mqtt_client_start(mqttClient);
+
+    return ESP_OK;
 }
 
 void mqttWait() {
