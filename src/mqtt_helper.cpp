@@ -12,6 +12,7 @@
 static const char *TAG = "mqtt_helper";
 
 static const int MQTT_CONNECTED_BIT = BIT0;
+static const int MQTT_PUB_STATS_BIT = BIT1;
 
 static const int STATS_INTERVAL_SEC = 2;
 
@@ -55,29 +56,33 @@ void subscribeTopic(const char *topic) {
     esp_mqtt_client_subscribe(mqttClient, topic, 2);
 }
 
-static void publishStats() {
-	char uptime[16];
-    snprintf(uptime, sizeof(uptime), "%llu", esp_timer_get_time() / 1000000);
-    publishDevProp("stats/uptime", uptime);
+static void publishStatsTask(void * pvParameter) {
+    while(true) {
+        xEventGroupWaitBits(mqttEventGroup, MQTT_PUB_STATS_BIT, true, true, portMAX_DELAY);
 
-	char heap[16];
-    snprintf(heap, sizeof(heap), "%lu", esp_get_free_heap_size());
-    publishDevProp("stats/freeheap", heap);
+        char uptime[16];
+        snprintf(uptime, sizeof(uptime), "%llu", esp_timer_get_time() / 1000000);
+        publishDevProp("stats/uptime", uptime);
 
-	char reconnects[10];
-    snprintf(reconnects, sizeof(reconnects), "%lu", reconnectCount);
-    publishDevProp("stats/reconnects", reconnects);
+        char heap[16];
+        snprintf(heap, sizeof(heap), "%lu", esp_get_free_heap_size());
+        publishDevProp("stats/freeheap", heap);
 
-	char signal[16];
-    wifi_ap_record_t wifidata = {};
-    ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&wifidata));
-    // NOTE: Not sure what the scale is here, let's call lowest 0% and highest 100%
-    snprintf(signal, sizeof(signal), "%d", ((wifidata.rssi - INT8_MIN)  * 100) / 255);
-    publishDevProp("stats/signal", signal);
+        char reconnects[10];
+        snprintf(reconnects, sizeof(reconnects), "%lu", reconnectCount);
+        publishDevProp("stats/reconnects", reconnects);
+
+        char signal[16];
+        wifi_ap_record_t wifidata = {};
+        ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&wifidata));
+        // NOTE: Not sure what the scale is here, let's call lowest 0% and highest 100%
+        snprintf(signal, sizeof(signal), "%d", ((wifidata.rssi - INT8_MIN)  * 100) / 255);
+        publishDevProp("stats/signal", signal);
+    }
 }
 
 static void publishStatsCallback(TimerHandle_t xTimer) {
-    publishStats();
+    xEventGroupSetBits(mqttEventGroup, MQTT_PUB_STATS_BIT);
 }
 
 static void handleConnected() {
@@ -117,7 +122,7 @@ static void handleConnected() {
     publishDevProp("stats/interval", interval);
 
     // Repeat on scheduler, but send current values once now
-    publishStats();
+    xEventGroupSetBits(mqttEventGroup, MQTT_PUB_STATS_BIT);
 
     topicSubscriber();
 
@@ -232,6 +237,7 @@ void mqttStart(topic_subscriber_t topicSubscriberArg, message_handler_t messageH
 
     mqttEventGroup = xEventGroupCreate();
 
+    xTaskCreate(&publishStatsTask, "mqtt_stats_task", 3072, NULL, 5, NULL);
     statsTimer = xTimerCreate("StatsTimer", ((STATS_INTERVAL_SEC * 1000) / portTICK_PERIOD_MS), pdTRUE, (void *) 0, publishStatsCallback);
 
     // Get the default MAC of this ESP32
